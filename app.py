@@ -88,7 +88,8 @@ def make_bar_chart(df: pd.DataFrame, column: str, title: str):
     counts["pct"] = (counts["count"] / total * 100).round(1)
     counts = counts.sort_values("pct", ascending=True)
     fig = px.bar(counts, x="pct", y=column, orientation="h", title=title,
-                 text=counts["pct"].apply(lambda v: f"{v}%"))
+                 text=counts["pct"].apply(lambda v: f"{v}%"),
+                 color_discrete_sequence=["#333333"])
     fig.update_layout(yaxis_title="", xaxis_title="%", height=max(300, len(counts) * 28 + 100))
     fig.update_traces(textposition="outside")
     return fig
@@ -119,6 +120,27 @@ def load_uploads(uploaded_files) -> pd.DataFrame:
         data = extract_exif_from_upload(uf)
         if data:
             records.append(data)
+    return pd.DataFrame(records)
+
+
+def load_zip(uploaded_zip) -> pd.DataFrame:
+    """Extract images from a ZIP and read their EXIF data."""
+    import io
+    import zipfile
+
+    records = []
+    with zipfile.ZipFile(io.BytesIO(uploaded_zip.read())) as zf:
+        for name in sorted(zf.namelist()):
+            ext = Path(name).suffix.lower()
+            if ext in IMAGE_EXTENSIONS:
+                with zf.open(name) as img_file:
+                    try:
+                        tags = exifread.process_file(io.BytesIO(img_file.read()), details=False)
+                        data = _parse_tags(tags, Path(name).name)
+                        if data:
+                            records.append(data)
+                    except Exception:
+                        pass
     return pd.DataFrame(records)
 
 
@@ -404,7 +426,8 @@ elif page == "Lenses":
                 counts["pct"] = (counts["count"] / total * 100).round(1)
                 counts["focal_mm"] = counts["focal_mm"].astype(int).astype(str) + "mm"
                 fig = px.bar(counts, x="focal_mm", y="pct", title=f"{lens_name}  ({total} photos)",
-                             text=counts["pct"].apply(lambda v: f"{v}%"))
+                             text=counts["pct"].apply(lambda v: f"{v}%"),
+                             color_discrete_sequence=["#333333"])
                 fig.update_layout(xaxis_title="Focal Length", yaxis_title="%", height=300)
                 fig.update_traces(textposition="outside")
                 st.plotly_chart(fig, use_container_width=True)
@@ -424,7 +447,8 @@ elif page == "Timeline":
         hour_counts["pct"] = (hour_counts["count"] / total * 100).round(1)
         hour_counts["label"] = hour_counts["hour"].apply(lambda h: f"{h:02d}:00")
         fig = px.bar(hour_counts, x="label", y="pct", title="Photos by Hour of Day",
-                     text=hour_counts["pct"].apply(lambda v: f"{v}%"))
+                     text=hour_counts["pct"].apply(lambda v: f"{v}%"),
+                     color_discrete_sequence=["#333333"])
         fig.update_layout(xaxis_title="Hour", yaxis_title="%", height=350)
         fig.update_traces(textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
