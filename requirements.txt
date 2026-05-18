@@ -1,0 +1,4 @@
+streamlit
+exifread
+plotly
+pandas

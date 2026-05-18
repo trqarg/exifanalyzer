@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+.streamlit/
+*.egg-info/
+dist/
+build/
+.env
