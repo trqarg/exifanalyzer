@@ -27,9 +27,6 @@ streamlit run app.py --theme.base light
 
 Open http://localhost:8501 in your browser.
 
-## Tech stack
+## Demo Site
 
-- [Streamlit](https://streamlit.io/) — UI
-- [exifread](https://pypi.org/project/ExifRead/) — EXIF parsing
-- [Plotly](https://plotly.com/python/) — Charts
-- [Pandas](https://pandas.pydata.org/) — Data processing
+https://exifanalyzer.streamlit.app/
