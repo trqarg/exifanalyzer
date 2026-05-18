@@ -32,6 +32,18 @@ def _parse_tags(tags, filename: str) -> dict | None:
     wb_map = {"0": "Auto", "1": "Manual"}
     white_balance = wb_map.get(wb_raw, wb_raw) if wb_raw else None
 
+    # Try to find shutter count from various maker note tags
+    shutter_count = None
+    for key in ("MakerNote TotalShutterReleases", "MakerNote ShutterCount",
+                "MakerNote ImageCount", "Image ImageNumber"):
+        val = get(key)
+        if val:
+            try:
+                shutter_count = int(val)
+                break
+            except ValueError:
+                pass
+
     return {
         "file": filename,
         "camera": get("Image Model"),
@@ -46,6 +58,7 @@ def _parse_tags(tags, filename: str) -> dict | None:
         "metering_mode": get("EXIF MeteringMode"),
         "exposure_mode": get("EXIF ExposureMode"),
         "flash": get("EXIF Flash"),
+        "shutter_count": shutter_count,
     }
 
 
@@ -53,7 +66,7 @@ def extract_exif(file_path: Path) -> dict | None:
     """Extract relevant EXIF fields from an image file on disk."""
     try:
         with open(file_path, "rb") as f:
-            tags = exifread.process_file(f, details=False)
+            tags = exifread.process_file(f, details=True)
     except Exception:
         return None
     return _parse_tags(tags, file_path.name)
@@ -181,7 +194,7 @@ with st.sidebar:
     st.title("📷 EXIF Photo Analyzer")
     st.divider()
 
-    pages = ["Home", "Summary", "Charts", "Lenses", "Timeline", "Raw Data"]
+    pages = ["Home", "Summary", "Charts", "Raw Data"]
 
     def on_nav_change():
         st.session_state.page = st.session_state.nav_radio
@@ -320,6 +333,12 @@ elif page == "Summary":
     else:
         m8.metric("Peak Hour", "—")
 
+    # Shutter count row
+    shutter_counts = df["shutter_count"].dropna()
+    if not shutter_counts.empty:
+        max_count = int(shutter_counts.max())
+        st.metric("Estimated Shutter Count", f"{max_count:,}")
+
     st.divider()
 
     # Top-3 mini tables
@@ -399,12 +418,9 @@ elif page == "Charts":
         if df["exposure_mode"].notna().any():
             st.plotly_chart(make_bar_chart(df, "exposure_mode", "Exposure Mode"), use_container_width=True)
 
-
-# ── Page: Lenses ─────────────────────────────────────────────
-
-elif page == "Lenses":
-    df = st.session_state.df
-    st.title("Focal Length per Lens")
+    # ── Focal length per lens ────────────────────────────────────
+    st.divider()
+    st.subheader("Focal Length Distribution per Lens")
 
     lens_fl = df[["lens", "focal_length"]].dropna()
     if lens_fl.empty:
@@ -432,15 +448,11 @@ elif page == "Lenses":
                 fig.update_traces(textposition="outside")
                 st.plotly_chart(fig, use_container_width=True)
 
-
-# ── Page: Timeline ───────────────────────────────────────────
-
-elif page == "Timeline":
-    df = st.session_state.df
-    st.title("Shooting Timeline")
+    # ── Shooting timeline ────────────────────────────────────────
+    st.divider()
+    st.subheader("Shooting Timeline")
 
     if df["hour"].notna().any():
-        st.subheader("Time of Day")
         hour_counts = df["hour"].dropna().value_counts().reindex(range(24), fill_value=0).reset_index()
         hour_counts.columns = ["hour", "count"]
         total = hour_counts["count"].sum()
