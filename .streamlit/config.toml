@@ -1,0 +1,9 @@
+[theme]
+base = "light"
+
+[server]
+runOnSave = true
+maxUploadSize = 1000
+
+[client]
+toolbarMode = "minimal"

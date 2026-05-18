@@ -11,14 +11,8 @@ import streamlit as st
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".tiff", ".tif", ".nef", ".cr2", ".arw", ".dng", ".raf", ".orf"}
 
 
-def extract_exif(file_path: Path) -> dict | None:
-    """Extract relevant EXIF fields from an image file."""
-    try:
-        with open(file_path, "rb") as f:
-            tags = exifread.process_file(f, details=False)
-    except Exception:
-        return None
-
+def _parse_tags(tags, filename: str) -> dict | None:
+    """Build a record dict from exifread tags."""
     if not tags:
         return None
 
@@ -26,7 +20,6 @@ def extract_exif(file_path: Path) -> dict | None:
         val = tags.get(key)
         return str(val) if val else None
 
-    # Parse hour from date
     date_str = get("EXIF DateTimeOriginal")
     hour = None
     if date_str:
@@ -35,13 +28,12 @@ def extract_exif(file_path: Path) -> dict | None:
         except (IndexError, ValueError):
             pass
 
-    # Map white balance mode
     wb_raw = get("EXIF WhiteBalance")
     wb_map = {"0": "Auto", "1": "Manual"}
     white_balance = wb_map.get(wb_raw, wb_raw) if wb_raw else None
 
     return {
-        "file": file_path.name,
+        "file": filename,
         "camera": get("Image Model"),
         "lens": get("EXIF LensModel"),
         "focal_length": get("EXIF FocalLength"),
@@ -55,6 +47,25 @@ def extract_exif(file_path: Path) -> dict | None:
         "exposure_mode": get("EXIF ExposureMode"),
         "flash": get("EXIF Flash"),
     }
+
+
+def extract_exif(file_path: Path) -> dict | None:
+    """Extract relevant EXIF fields from an image file on disk."""
+    try:
+        with open(file_path, "rb") as f:
+            tags = exifread.process_file(f, details=False)
+    except Exception:
+        return None
+    return _parse_tags(tags, file_path.name)
+
+
+def extract_exif_from_upload(uploaded_file) -> dict | None:
+    """Extract relevant EXIF fields from a Streamlit UploadedFile."""
+    try:
+        tags = exifread.process_file(uploaded_file, details=False)
+    except Exception:
+        return None
+    return _parse_tags(tags, uploaded_file.name)
 
 
 def load_folder(folder: str) -> pd.DataFrame:
@@ -83,6 +94,12 @@ def make_bar_chart(df: pd.DataFrame, column: str, title: str):
     return fig
 
 
+import platform
+import shutil
+
+IS_LOCAL = platform.system() == "Darwin" and shutil.which("osascript") is not None
+
+
 def pick_folder() -> str | None:
     """Open a native macOS folder picker via AppleScript."""
     import subprocess
@@ -93,6 +110,16 @@ def pick_folder() -> str | None:
     )
     folder = result.stdout.strip()
     return folder if folder else None
+
+
+def load_uploads(uploaded_files) -> pd.DataFrame:
+    """Build a DataFrame from a list of Streamlit UploadedFiles."""
+    records = []
+    for uf in uploaded_files:
+        data = extract_exif_from_upload(uf)
+        if data:
+            records.append(data)
+    return pd.DataFrame(records)
 
 
 def top(df, col):
@@ -150,7 +177,10 @@ with st.sidebar:
     if has_data:
         st.divider()
         st.caption(f"**{len(st.session_state.df)}** photos loaded")
-        st.caption(f"`{st.session_state.folder}`")
+        if st.session_state.folder != "uploaded files":
+            st.caption(f"`{st.session_state.folder}`")
+        else:
+            st.caption("From uploaded files")
 
 
 # ── Page: Home ───────────────────────────────────────────────
@@ -191,20 +221,48 @@ if page == "Home":
     )
     st.write("")
 
-    if st.button("📁 Select Folder", type="primary"):
-        chosen = pick_folder()
-        if chosen and os.path.isdir(chosen):
-            with st.spinner("Scanning images and reading EXIF data..."):
-                df = load_folder(chosen)
-            if df.empty:
-                st.warning("No images with EXIF data found in that folder.")
-            else:
-                st.session_state.df = df
-                st.session_state.folder = chosen
-                st.session_state.page = "Summary"
-                st.rerun()
-        elif chosen:
-            st.error("That folder does not exist.")
+    if IS_LOCAL:
+        tab_folder, tab_upload = st.tabs(["Select Folder", "Upload Files"])
+    else:
+        tab_upload = st.container()
+        tab_folder = None
+
+    # ── Folder picker (local only) ──
+    if tab_folder is not None:
+        with tab_folder:
+            if st.button("📁 Browse Folder", type="primary"):
+                chosen = pick_folder()
+                if chosen and os.path.isdir(chosen):
+                    with st.spinner("Scanning images and reading EXIF data..."):
+                        df = load_folder(chosen)
+                    if df.empty:
+                        st.warning("No images with EXIF data found in that folder.")
+                    else:
+                        st.session_state.df = df
+                        st.session_state.folder = chosen
+                        st.session_state.page = "Summary"
+                        st.rerun()
+                elif chosen:
+                    st.error("That folder does not exist.")
+
+    # ── File uploader (works everywhere) ──
+    with tab_upload:
+        uploaded = st.file_uploader(
+            "Drop your photos here",
+            type=["jpg", "jpeg", "tiff", "tif", "nef", "cr2", "arw", "dng", "raf", "orf"],
+            accept_multiple_files=True,
+        )
+        if uploaded:
+            if st.button("Analyze uploads", type="primary"):
+                with st.spinner("Reading EXIF data..."):
+                    df = load_uploads(uploaded)
+                if df.empty:
+                    st.warning("No EXIF data found in the uploaded files.")
+                else:
+                    st.session_state.df = df
+                    st.session_state.folder = "uploaded files"
+                    st.session_state.page = "Summary"
+                    st.rerun()
 
     if has_data:
         st.success("Data loaded — use the sidebar to navigate.")
